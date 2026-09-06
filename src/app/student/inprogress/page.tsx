@@ -79,6 +79,60 @@ export default function StudentInProgress() {
     }
   }
 
+  const [editOrder,  setEditOrder]  = useState<any|null>(null);
+  const [editForm,   setEditForm]   = useState({ topic:"", department:"", specialInstructions:"", guidelineFileUrl:"" });
+  const [editing,    setEditing]    = useState(false);
+  const [uploading,  setUploading]  = useState(false);
+
+  function openEdit(order: any) {
+    setEditOrder(order);
+    setEditForm({
+      topic:               order.topic || "",
+      department:          order.department || "",
+      specialInstructions: order.specialInstructions || "",
+      guidelineFileUrl:    order.guidelineFileUrl || "",
+    });
+  }
+
+  async function handleEditUpload() {
+    const inp = document.createElement("input");
+    inp.type = "file"; inp.accept = ".pdf,.doc,.docx,.jpg,.jpeg,.png,.webp,.zip,.mp3,.m4a,.wav";
+    inp.onchange = async (e) => {
+      const file = (e.target as HTMLInputElement).files?.[0];
+      if (!file) return;
+      if (file.size > 20*1024*1024) { alert("Max 20MB"); return; }
+      setUploading(true);
+      const fd = new FormData(); fd.append("file", file); fd.append("folder", "orders/guidelines");
+      const res  = await fetch("/api/upload", { method:"POST", body:fd });
+      const data = await res.json();
+      if (res.ok) {
+        const existing = editForm.guidelineFileUrl ? editForm.guidelineFileUrl.split(",").filter(Boolean) : [];
+        setEditForm(f => ({...f, guidelineFileUrl: [...existing, data.url].join(",")}));
+      } else alert(data.error || "Upload failed.");
+      setUploading(false);
+    };
+    inp.click();
+  }
+
+  async function handleSaveEdit() {
+    if (!editOrder || !editForm.topic.trim()) { alert("Topic is required."); return; }
+    setEditing(true);
+    const res  = await fetch("/api/student/edit-order", {
+      method:"PATCH", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({
+        orderId:             editOrder.id,
+        topic:               editForm.topic.trim(),
+        department:          editForm.department.trim(),
+        specialInstructions: editForm.specialInstructions.trim() || null,
+        guidelineFileUrl:    editForm.guidelineFileUrl || null,
+      }),
+    });
+    const data = await res.json();
+    if (res.ok) { setEditOrder(null); loadData(); }
+    else alert(data.error || "Failed to save. Please try again.");
+    setEditing(false);
+  }
+
   useEffect(()=>{
     loadData();
     // If returning from a payment redirect (Paystack), the webhook may still be
@@ -187,6 +241,13 @@ export default function StudentInProgress() {
                   {(order as any).bankTransferReference && (
                     <div style={{marginTop:".4rem"}}>Reference: <strong style={{fontFamily:"monospace"}}>{(order as any).bankTransferReference}</strong></div>
                   )}
+                  <div style={{marginTop:".75rem"}}>
+                    <button onClick={()=>openEdit(order)}
+                      style={{padding:".45rem 1rem",borderRadius:"8px",background:"#EDE9FE",color:"#5B21B6",border:"none",cursor:"pointer",fontSize:".78rem",fontWeight:700}}>
+                      ✏️ Edit My Request
+                    </button>
+                    <span style={{marginLeft:".5rem",fontSize:".72rem",color:"#92400E"}}>Payment not yet confirmed — you can still make changes.</span>
+                  </div>
                 </div>
               )}
 
@@ -247,6 +308,65 @@ export default function StudentInProgress() {
 
       {addModal && (
         <AddChaptersModal orderId={addModal} onClose={()=>{ setAddModal(null); loadData(); }} />
+      )}
+
+      {/* Edit Order Modal */}
+      {editOrder && (
+        <div style={{position:"fixed" as const,inset:0,background:"rgba(12,26,46,.6)",zIndex:50,display:"flex",alignItems:"center",justifyContent:"center",padding:"1rem"}}
+          onClick={e=>{if(e.target===e.currentTarget){setEditOrder(null);}}}>
+          <div style={{background:"#fff",borderRadius:"20px",padding:"1.75rem",maxWidth:"500px",width:"100%",maxHeight:"90vh",overflowY:"auto" as const}}>
+            <div style={{fontFamily:"'Syne',sans-serif",fontSize:"1rem",fontWeight:800,color:"#0C1A2E",marginBottom:".25rem"}}>✏️ Edit Your Request</div>
+            <div style={{fontSize:".78rem",color:"#5B7EA6",marginBottom:"1.25rem"}}>Changes will be reviewed when we confirm your payment.</div>
+
+            <div style={{marginBottom:"1rem"}}>
+              <label style={{fontSize:".68rem",fontWeight:700,textTransform:"uppercase" as const,letterSpacing:".08em",color:"#0C1A2E",display:"block",marginBottom:".4rem"}}>Project Topic</label>
+              <textarea rows={3} value={editForm.topic} onChange={e=>setEditForm(f=>({...f,topic:e.target.value}))}
+                style={{width:"100%",padding:".65rem 1rem",borderRadius:"10px",border:"1.5px solid #BAE6FD",fontSize:".85rem",outline:"none",boxSizing:"border-box" as const,resize:"vertical" as const}} />
+            </div>
+
+            <div style={{marginBottom:"1rem"}}>
+              <label style={{fontSize:".68rem",fontWeight:700,textTransform:"uppercase" as const,letterSpacing:".08em",color:"#0C1A2E",display:"block",marginBottom:".4rem"}}>Department / Course</label>
+              <input value={editForm.department} onChange={e=>setEditForm(f=>({...f,department:e.target.value}))}
+                style={{width:"100%",padding:".65rem 1rem",borderRadius:"10px",border:"1.5px solid #BAE6FD",fontSize:".85rem",outline:"none",boxSizing:"border-box" as const}}
+                placeholder="e.g. Business Administration" />
+            </div>
+
+            <div style={{marginBottom:"1rem"}}>
+              <label style={{fontSize:".68rem",fontWeight:700,textTransform:"uppercase" as const,letterSpacing:".08em",color:"#0C1A2E",display:"block",marginBottom:".4rem"}}>Special Instructions <span style={{fontWeight:400,textTransform:"none" as const,color:"#94A3B8"}}>(optional)</span></label>
+              <textarea rows={3} value={editForm.specialInstructions} onChange={e=>setEditForm(f=>({...f,specialInstructions:e.target.value}))}
+                style={{width:"100%",padding:".65rem 1rem",borderRadius:"10px",border:"1.5px solid #BAE6FD",fontSize:".85rem",outline:"none",boxSizing:"border-box" as const,resize:"vertical" as const}}
+                placeholder="Any additional instructions or corrections..." />
+            </div>
+
+            <div style={{marginBottom:"1.25rem"}}>
+              <label style={{fontSize:".68rem",fontWeight:700,textTransform:"uppercase" as const,letterSpacing:".08em",color:"#0C1A2E",display:"block",marginBottom:".4rem"}}>Guideline Files <span style={{fontWeight:400,textTransform:"none" as const,color:"#94A3B8"}}>(optional)</span></label>
+              {editForm.guidelineFileUrl && editForm.guidelineFileUrl.split(",").filter(Boolean).map((url:string,i:number,arr:string[])=>(
+                <div key={i} style={{display:"flex",alignItems:"center",justifyContent:"space-between",background:"#F0FDF4",border:"1px solid #BBF7D0",borderRadius:"8px",padding:".4rem .75rem",marginBottom:".4rem",fontSize:".78rem"}}>
+                  <span style={{color:"#065F46",fontWeight:600}}>📎 {url.split("/").pop()?.slice(0,35)||`File ${i+1}`}</span>
+                  <button onClick={()=>{
+                    const updated = arr.filter((_:string,j:number)=>j!==i).join(",");
+                    setEditForm(f=>({...f,guidelineFileUrl:updated}));
+                  }} style={{background:"none",border:"none",cursor:"pointer",color:"#EF4444"}}>✕</button>
+                </div>
+              ))}
+              <div onClick={handleEditUpload}
+                style={{border:"2px dashed #BAE6FD",borderRadius:"10px",padding:".65rem",textAlign:"center" as const,cursor:uploading?"not-allowed":"pointer",background:"#F8FCFF",fontSize:".78rem",color:"#5B7EA6"}}>
+                {uploading?"⏳ Uploading...":"📎 Click to upload guideline · PDF, Word, images, ZIP · Max 20MB"}
+              </div>
+            </div>
+
+            <div style={{display:"flex",gap:".75rem"}}>
+              <button onClick={handleSaveEdit} disabled={editing}
+                style={{flex:1,padding:".75rem",borderRadius:"12px",border:"none",background:"#0C1A2E",color:"#38BDF8",fontSize:".88rem",fontWeight:700,cursor:editing?"not-allowed":"pointer",opacity:editing?0.6:1}}>
+                {editing?"Saving...":"💾 Save Changes"}
+              </button>
+              <button onClick={()=>setEditOrder(null)}
+                style={{padding:".75rem 1.25rem",borderRadius:"12px",border:"1.5px solid #BAE6FD",background:"#fff",cursor:"pointer",fontSize:".85rem",fontWeight:700,color:"#5B7EA6"}}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </StudentLayout>
   );
